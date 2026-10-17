@@ -160,6 +160,43 @@ class ZeroGPTAutomation:
         time.sleep(self.config.delay_between_requests)
         return paraphrased_result
 
+    def paraphrase_with_retry(self, text: str, max_retries: Optional[int] = None) -> tuple[str, bool]:
+        """Paraphrase text with retry loop and exponential backoff.
+
+        If all retries fail, returns the original text to ensure document integrity.
+
+        Args:
+            text: Paragraph text.
+            max_retries: Maximum number of attempts. Defaults to config.max_retries.
+
+        Returns:
+            Tuple of (resulting_text, was_paraphrased_successfully).
+        """
+        retries = max_retries if max_retries is not None else self.config.max_retries
+        for attempt in range(1, retries + 1):
+            try:
+                result = self.paraphrase_text(text)
+                return result, True
+            except Exception as e:
+                logger.warning(
+                    "Attempt %d/%d failed to paraphrase paragraph: %s",
+                    attempt,
+                    retries,
+                    e,
+                )
+                if attempt < retries:
+                    backoff = attempt * 2.0
+                    logger.info("Backing off for %.1f seconds before retry...", backoff)
+                    time.sleep(backoff)
+                else:
+                    logger.error(
+                        "All %d attempts failed for paragraph. Falling back to original text.",
+                        retries,
+                    )
+                    return text, False
+
+        return text, False
+
     def close(self) -> None:
         """Close browser resources and stop Playwright."""
         try:
