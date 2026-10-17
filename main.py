@@ -13,7 +13,6 @@ from typing import Optional
 
 from config import AutomationConfig
 from doc_handler import DocumentHandler
-from zerogpt_automation import ZeroGPTAutomation
 
 # Configure structured logging
 logging.basicConfig(
@@ -139,6 +138,14 @@ def run_pipeline(
     )
     if url:
         config.url = url
+
+    try:
+        from zerogpt_automation import ZeroGPTAutomation
+    except ImportError:
+        logger.error(
+            "Playwright is not installed. Please run: pip install -r requirements.txt && playwright install chromium"
+        )
+        return 1
 
     automation = ZeroGPTAutomation(config=config)
     success_count = 0
