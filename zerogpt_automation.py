@@ -43,6 +43,7 @@ class ZeroGPTAutomation:
         )
         self.context = self.browser.new_context(
             no_viewport=True,
+            permissions=["clipboard-read", "clipboard-write"],
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -154,57 +155,89 @@ class ZeroGPTAutomation:
         except Exception:
             pass
 
-        # Locate input textarea and clear completely
+        # Clear existing text using keyboard and fill
         input_el = self._find_element(self.config.input_selectors, "input textarea")
         try:
             input_el.click(force=True)
+            self.page.keyboard.press("Control+A")
+            self.page.keyboard.press("Backspace")
         except Exception:
             pass
         input_el.fill("", force=True)
         time.sleep(0.3)
 
-        # Clear button on page if present (to clear previous paragraph's output/input)
+        # Clear button on page if present (to reset previous paragraph's output/input)
         try:
             clear_btn = self.page.locator("button:has-text('Clear'), span:has-text('Clear'), div:has-text('Clear')")
             if clear_btn.count() > 0 and clear_btn.first.is_visible():
                 clear_btn.first.click(force=True)
-                time.sleep(0.3)
+                time.sleep(0.4)
         except Exception:
             pass
 
-        # Fill paragraph text
+        # Paste/inject paragraph text into textarea and dispatch input events
+        logger.debug("Pasting paragraph into input area (%d characters)...", len(text))
+        input_el.click(force=True)
         input_el.fill(text, force=True)
-        time.sleep(0.5)
+        # Dispatch reactive events so Vue updates character count and enables the button
+        try:
+            input_el.dispatch_event("input")
+            input_el.dispatch_event("change")
+        except Exception:
+            pass
+        time.sleep(0.8)
 
         # Locate and click the action/humanize button
         action_btn = self._find_element(self.config.action_selectors, "action button")
         action_btn.click(force=True)
-        logger.debug("Clicked action button. Waiting for rewritten output...")
+        logger.info("Clicked 'Humanize Text' button. Waiting for humanization to complete...")
 
-        # Wait for output to populate with rephrased content
+        # Wait for generation to complete (ZeroGPT humanizer typically takes 15-25 seconds)
         start_wait = time.time()
-        timeout_seconds = max(self.config.timeout_ms / 1000.0, 35.0)
+        timeout_seconds = max(self.config.timeout_ms / 1000.0, 45.0)
         paraphrased_result = ""
 
-        time.sleep(2.0)  # Allow request to trigger mutation
+        time.sleep(3.0)  # Initial wait before polling
 
         while time.time() - start_wait < timeout_seconds:
             try:
-                # 1. Try converted-text container directly
-                conv_loc = self.page.locator(".converted-text")
+                # Priority 1: Check if "Copy" button is present and active in the output area
+                copy_btns = self.page.locator("button:has-text('Copy'), div:has-text('Copy'), span:has-text('Copy')")
+                if copy_btns.count() > 0:
+                    for i in range(copy_btns.count()):
+                        btn = copy_btns.nth(i)
+                        if btn.is_visible():
+                            try:
+                                btn.click(force=True)
+                                time.sleep(0.4)
+                                # Read text directly from browser clipboard
+                                clip_text = self.page.evaluate("navigator.clipboard.readText()")
+                                if clip_text and clip_text.strip() and clip_text.strip() != text:
+                                    cleaned_clip = self._clean_extracted_text(clip_text.strip())
+                                    if cleaned_clip and len(cleaned_clip) > 15:
+                                        logger.info("Successfully copied humanized text via Copy button!")
+                                        paraphrased_result = cleaned_clip
+                                        break
+                            except Exception as e:
+                                logger.debug("Clipboard copy read failed: %s", e)
+                    if paraphrased_result:
+                        break
+
+                # Priority 2: Extract from .converted-text or .result-panel
+                conv_loc = self.page.locator(".converted-text, .result-panel")
                 if conv_loc.count() > 0:
                     raw_content = conv_loc.first.inner_text().strip()
                     cleaned = self._clean_extracted_text(raw_content)
-                    if cleaned and len(cleaned) > 15:
+                    if cleaned and len(cleaned) > 20 and cleaned != text:
                         paraphrased_result = cleaned
                         break
 
-                # 2. Try generic output selectors
+                # Priority 3: Fallback output selectors
                 output_el = self._find_element(self.config.output_selectors, "output box")
                 tag_name = output_el.evaluate("el => el.tagName")
                 raw_content = output_el.input_value() if tag_name == "TEXTAREA" else output_el.inner_text()
                 cleaned = self._clean_extracted_text(raw_content)
-                if cleaned and len(cleaned) > 15 and cleaned != text:
+                if cleaned and len(cleaned) > 20 and cleaned != text:
                     paraphrased_result = cleaned
                     break
             except Exception:
