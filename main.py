@@ -62,6 +62,13 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--passes",
+        type=int,
+        default=1,
+        help="Number of sequential humanization passes per paragraph (e.g. 2 to humanize the humanized output)",
+    )
+
+    parser.add_argument(
         "--headless",
         action="store_true",
         default=False,
@@ -83,6 +90,7 @@ def run_pipeline(
     output_file: str,
     delay: float = 4.0,
     retries: int = 3,
+    passes: int = 1,
     headless: bool = False,
     url: Optional[str] = None,
 ) -> int:
@@ -93,6 +101,7 @@ def run_pipeline(
         output_file: Destination .docx path.
         delay: Pause between paragraph queries.
         retries: Retries per paragraph.
+        passes: Number of sequential humanization passes per paragraph.
         headless: Whether browser is headless.
         url: Paraphraser URL.
 
@@ -135,6 +144,7 @@ def run_pipeline(
         headless=headless,
         delay_between_requests=delay,
         max_retries=retries,
+        passes=passes,
     )
     if url:
         config.url = url
@@ -158,11 +168,12 @@ def run_pipeline(
         print(f"  Input:  {input_path}")
         print(f"  Output: {output_path}")
         print(f"  Total Paragraphs: {total}")
+        print(f"  Humanize Passes:  {passes}")
         print("=" * 65 + "\n")
 
         for idx, paragraph in enumerate(paragraphs, start=1):
-            logger.info("Processing paragraph %d/%d (%d characters)...", idx, total, len(paragraph))
-            result_text, ok = automation.paraphrase_with_retry(paragraph)
+            logger.info("Processing paragraph %d/%d (%d characters, %d pass(es))...", idx, total, len(paragraph), passes)
+            result_text, ok = automation.paraphrase_with_retry(paragraph, passes=passes)
 
             if ok:
                 success_count += 1
@@ -207,6 +218,7 @@ def main() -> None:
         output_file=args.output,
         delay=args.delay,
         retries=args.retries,
+        passes=args.passes,
         headless=args.headless,
         url=args.url,
     )

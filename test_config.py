@@ -13,6 +13,7 @@ def test_default_config_initialization():
     assert cfg.headless is False
     assert 3.0 <= cfg.delay_between_requests <= 5.0
     assert cfg.max_retries == 3
+    assert cfg.passes == 1
     assert len(cfg.input_selectors) > 0
     assert len(cfg.action_selectors) > 0
     assert len(cfg.output_selectors) > 0
@@ -25,11 +26,13 @@ def test_custom_config_override():
         headless=True,
         delay_between_requests=5.0,
         max_retries=5,
+        passes=3,
     )
     assert cfg.url == "https://custom-url.com"
     assert cfg.headless is True
     assert cfg.delay_between_requests == 5.0
     assert cfg.max_retries == 5
+    assert cfg.passes == 3
 
 
 if __name__ == "__main__":

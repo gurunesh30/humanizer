@@ -12,7 +12,8 @@ class AutomationConfig:
     headless: bool = False
     delay_between_requests: float = 4.0  # Configurable 3-5s rate limit delay
     max_retries: int = 3
-    timeout_ms: int = 30000
+    passes: int = 1  # Number of humanization iterations per paragraph
+    timeout_ms: int = 45000
     slow_mo_ms: int = 100
 
     # Fallback CSS selectors for resilient page interaction
