@@ -8,7 +8,7 @@ from typing import List
 class AutomationConfig:
     """Configuration settings for browser automation and anti-bot mitigation."""
 
-    url: str = "https://www.zerogpt.com/paraphraser"
+    url: str = "https://www.zerogpt.com/ai-humanizer"
     headless: bool = False
     delay_between_requests: float = 4.0  # Configurable 3-5s rate limit delay
     max_retries: int = 3
@@ -20,6 +20,7 @@ class AutomationConfig:
         default_factory=lambda: [
             "textarea#input-text",
             "textarea[placeholder*='text' i]",
+            "textarea[placeholder*='humanize' i]",
             "textarea[placeholder*='paraphrase' i]",
             "textarea.paraphrase-input",
             "textarea",
@@ -28,6 +29,8 @@ class AutomationConfig:
 
     action_selectors: List[str] = field(
         default_factory=lambda: [
+            "button:has-text('Humanize')",
+            "button:has-text('Humanize Text')",
             "button:has-text('Paraphrase')",
             "button:has-text('Rewrite')",
             "button:has-text('Paraphrase Text')",

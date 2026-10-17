@@ -9,7 +9,7 @@ from config import AutomationConfig
 
 def test_default_config_initialization():
     cfg = AutomationConfig()
-    assert cfg.url == "https://www.zerogpt.com/paraphraser"
+    assert cfg.url == "https://www.zerogpt.com/ai-humanizer"
     assert cfg.headless is False
     assert 3.0 <= cfg.delay_between_requests <= 5.0
     assert cfg.max_retries == 3

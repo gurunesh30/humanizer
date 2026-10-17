@@ -71,8 +71,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--url",
         type=str,
-        default="https://www.zerogpt.com/paraphraser",
-        help="Target ZeroGPT paraphraser endpoint URL",
+        default="https://www.zerogpt.com/ai-humanizer",
+        help="Target ZeroGPT endpoint URL (defaults to AI Humanizer)",
     )
 
     return parser.parse_args()
