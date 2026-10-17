@@ -103,11 +103,35 @@ class ZeroGPTAutomation:
         except PlaywrightTimeoutError:
             raise RuntimeError(f"Unable to locate {description} with any configured selector: {selectors}")
 
+    def _clean_extracted_text(self, text: str) -> str:
+        """Strip boilerplate UI buttons, word counts, and labels from humanizer output."""
+        if not text:
+            return ""
+        lines = [line.strip() for line in text.split("\n") if line.strip()]
+        ignored_keywords = [
+            "your humanized text will appear here",
+            "words",
+            "clear",
+            "copy",
+            "switch to the advanced model",
+            "ai probability",
+            "confidence",
+            "humanized",
+            "classification",
+        ]
+        filtered = []
+        for line in lines:
+            lower = line.lower()
+            if any(kw in lower for kw in ignored_keywords):
+                continue
+            filtered.append(line)
+        return "\n\n".join(filtered).strip()
+
     def paraphrase_text(self, text: str) -> str:
-        """Submit text to ZeroGPT paraphraser, trigger rewrite, and extract output.
+        """Submit text to ZeroGPT paraphraser/humanizer, trigger rewrite, and extract output.
 
         Args:
-            text: Paragraph text to paraphrase.
+            text: Paragraph text to paraphrase/humanize.
 
         Returns:
             Rephrased text output string.
@@ -121,40 +145,74 @@ class ZeroGPTAutomation:
         # Ensure Cloudflare hasn't popped up between requests
         self.check_and_handle_cloudflare()
 
+        # Handle potential placeholder overlay (e.g. .source-placeholder)
+        try:
+            placeholder = self.page.locator(".source-placeholder, .panel-placeholder")
+            if placeholder.count() > 0 and placeholder.first.is_visible():
+                placeholder.first.click(force=True)
+                time.sleep(0.3)
+        except Exception:
+            pass
+
         # Locate input textarea and clear completely
         input_el = self._find_element(self.config.input_selectors, "input textarea")
-        input_el.click()
-        input_el.fill("")
+        try:
+            input_el.click(force=True)
+        except Exception:
+            pass
+        input_el.fill("", force=True)
         time.sleep(0.3)
-        input_el.fill(text)
+
+        # Clear button on page if present (to clear previous paragraph's output/input)
+        try:
+            clear_btn = self.page.locator("button:has-text('Clear'), span:has-text('Clear'), div:has-text('Clear')")
+            if clear_btn.count() > 0 and clear_btn.first.is_visible():
+                clear_btn.first.click(force=True)
+                time.sleep(0.3)
+        except Exception:
+            pass
+
+        # Fill paragraph text
+        input_el.fill(text, force=True)
         time.sleep(0.5)
 
-        # Locate and click the action/paraphrase button
-        action_btn = self._find_element(self.config.action_selectors, "paraphrase button")
-        action_btn.click()
-        logger.debug("Clicked paraphrase button. Waiting for output...")
+        # Locate and click the action/humanize button
+        action_btn = self._find_element(self.config.action_selectors, "action button")
+        action_btn.click(force=True)
+        logger.debug("Clicked action button. Waiting for rewritten output...")
 
         # Wait for output to populate with rephrased content
         start_wait = time.time()
-        timeout_seconds = self.config.timeout_ms / 1000.0
+        timeout_seconds = max(self.config.timeout_ms / 1000.0, 35.0)
         paraphrased_result = ""
 
-        time.sleep(1.5)  # Allow request to trigger mutation
+        time.sleep(2.0)  # Allow request to trigger mutation
 
         while time.time() - start_wait < timeout_seconds:
             try:
+                # 1. Try converted-text container directly
+                conv_loc = self.page.locator(".converted-text")
+                if conv_loc.count() > 0:
+                    raw_content = conv_loc.first.inner_text().strip()
+                    cleaned = self._clean_extracted_text(raw_content)
+                    if cleaned and len(cleaned) > 15:
+                        paraphrased_result = cleaned
+                        break
+
+                # 2. Try generic output selectors
                 output_el = self._find_element(self.config.output_selectors, "output box")
-                content = output_el.input_value() if output_el.evaluate("el => el.tagName") == "TEXTAREA" else output_el.inner_text()
-                content = content.strip()
-                if content and content != text:
-                    paraphrased_result = content
+                tag_name = output_el.evaluate("el => el.tagName")
+                raw_content = output_el.input_value() if tag_name == "TEXTAREA" else output_el.inner_text()
+                cleaned = self._clean_extracted_text(raw_content)
+                if cleaned and len(cleaned) > 15 and cleaned != text:
+                    paraphrased_result = cleaned
                     break
             except Exception:
                 pass
-            time.sleep(0.8)
+            time.sleep(1.0)
 
         if not paraphrased_result:
-            raise RuntimeError("Paraphraser timed out or did not return distinct rewritten content.")
+            raise RuntimeError("Humanizer timed out or did not return distinct rewritten content.")
 
         # Rate-limiting pause between paragraphs
         time.sleep(self.config.delay_between_requests)

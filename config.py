@@ -18,6 +18,7 @@ class AutomationConfig:
     # Fallback CSS selectors for resilient page interaction
     input_selectors: List[str] = field(
         default_factory=lambda: [
+            "textarea.source-textarea",
             "textarea#input-text",
             "textarea[placeholder*='text' i]",
             "textarea[placeholder*='humanize' i]",
@@ -29,8 +30,8 @@ class AutomationConfig:
 
     action_selectors: List[str] = field(
         default_factory=lambda: [
-            "button:has-text('Humanize')",
             "button:has-text('Humanize Text')",
+            "button:has-text('Humanize')",
             "button:has-text('Paraphrase')",
             "button:has-text('Rewrite')",
             "button:has-text('Paraphrase Text')",
@@ -41,6 +42,8 @@ class AutomationConfig:
 
     output_selectors: List[str] = field(
         default_factory=lambda: [
+            ".converted-text",
+            ".result-panel",
             ".output-text",
             "#output-text",
             "div.paraphrase-output",
