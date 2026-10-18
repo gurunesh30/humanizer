@@ -172,18 +172,18 @@ class ZeroGPTAutomation:
         except Exception:
             pass
 
-        # Locate textarea inside humanizer box
-        input_el = humanizer_box.locator("textarea.source-textarea, textarea").first
+        # Step 1: Buffer input - clear browser clipboard so old text can never be mistakenly copied
         try:
-            input_el.click(no_wait_after=True)
-            self.page.keyboard.press("Control+A")
-            self.page.keyboard.press("Backspace")
+            self.page.evaluate("navigator.clipboard.writeText('')")
         except Exception:
             pass
+
+        # Step 2: Clear input field cleanly
+        input_el = humanizer_box.locator("textarea.source-textarea, textarea").first
         input_el.fill("", force=True)
         time.sleep(0.2)
 
-        # Clear button on page if present (to reset previous paragraph's output/input)
+        # Clear previous result on page if present
         try:
             clear_btn = humanizer_box.locator(".result-actions :text('Clear'), .text-action:has-text('Clear')")
             if clear_btn.count() > 0 and clear_btn.first.is_visible():
@@ -192,8 +192,8 @@ class ZeroGPTAutomation:
         except Exception:
             pass
 
-        # Paste/inject paragraph text into textarea and dispatch input events
-        logger.debug("Pasting text into input area (%d characters)...", len(text))
+        # Step 3: Paste input text from buffer into humanizer textarea
+        logger.debug("Pasting buffer into input area (%d characters)...", len(text))
         input_el.fill(text, force=True)
         try:
             input_el.dispatch_event("input")
@@ -202,54 +202,63 @@ class ZeroGPTAutomation:
             pass
         time.sleep(0.6)
 
-        # Locate and click the action/humanize button inside humanizer box
+        # Step 4: Click Humanize Text button
         action_btn = humanizer_box.locator("button:has-text('Humanize Text'), button:has-text('Humanize')").first
         action_btn.click(no_wait_after=True)
         logger.info("Clicked 'Humanize Text' button. Waiting for humanization to complete...")
 
-        # Wait for generation to complete
+        # Step 5: Wait for generation to complete (observing .result-panel mutation)
         start_wait = time.time()
-        timeout_seconds = max(self.config.timeout_ms / 1000.0, 45.0)
-        paraphrased_result = ""
+        timeout_seconds = max(self.config.timeout_ms / 1000.0, 50.0)
+        output_buffer = ""
 
         time.sleep(3.0)  # Initial wait before polling
 
         while time.time() - start_wait < timeout_seconds:
             try:
-                # Priority 1: Check if "Copy" action is available inside the result panel
-                copy_action = humanizer_box.locator(".result-actions, .result-action-buttons, .result-panel").locator(":text('Copy')")
-                if copy_action.count() > 0 and copy_action.first.is_visible():
-                    try:
-                        copy_action.first.click(no_wait_after=True)
-                        time.sleep(0.4)
-                        clip_text = self.page.evaluate("navigator.clipboard.readText()")
-                        if clip_text and clip_text.strip() and clip_text.strip() != text:
-                            cleaned_clip = self._clean_extracted_text(clip_text.strip())
-                            if cleaned_clip and len(cleaned_clip) > 15:
-                                logger.info("Copied humanized text via Copy button.")
-                                paraphrased_result = cleaned_clip
-                                break
-                    except Exception as e:
-                        logger.debug("Clipboard copy read failed: %s", e)
+                # Check if result panel is populated with new rewritten text
+                panel = humanizer_box.locator(".result-panel, .converted-text").first
+                panel_text = panel.inner_text().strip() if panel.count() > 0 else ""
 
-                # Priority 2: Extract text directly from .converted-text or .result-panel
-                conv_loc = humanizer_box.locator(".converted-text, .result-panel")
-                if conv_loc.count() > 0:
-                    raw_content = conv_loc.first.inner_text().strip()
-                    cleaned = self._clean_extracted_text(raw_content)
-                    if cleaned and len(cleaned) > 20 and cleaned != text:
-                        paraphrased_result = cleaned
+                is_ready = (
+                    panel_text
+                    and "Your humanized text will appear here" not in panel_text
+                    and len(panel_text) > 30
+                )
+
+                if is_ready:
+                    # Strategy A: Click Copy button and read from clipboard into buffer
+                    copy_btn = humanizer_box.locator(".result-actions :text('Copy'), .result-panel :text('Copy')").first
+                    if copy_btn.count() > 0 and copy_btn.is_visible():
+                        try:
+                            copy_btn.click(no_wait_after=True)
+                            time.sleep(0.4)
+                            clip_text = self.page.evaluate("navigator.clipboard.readText()")
+                            if clip_text and clip_text.strip() and clip_text.strip() != text:
+                                cleaned_clip = self._clean_extracted_text(clip_text.strip())
+                                if cleaned_clip and len(cleaned_clip) > 15:
+                                    logger.info("Output buffer captured via ZeroGPT Copy button.")
+                                    output_buffer = cleaned_clip
+                                    break
+                        except Exception as e:
+                            logger.debug("Clipboard copy read failed: %s", e)
+
+                    # Strategy B: Direct panel extraction into buffer
+                    cleaned_panel = self._clean_extracted_text(panel_text)
+                    if cleaned_panel and len(cleaned_panel) > 20 and cleaned_panel != text:
+                        logger.info("Output buffer captured from result panel.")
+                        output_buffer = cleaned_panel
                         break
             except Exception:
                 pass
             time.sleep(1.0)
 
-        if not paraphrased_result:
+        if not output_buffer:
             raise RuntimeError("Humanizer timed out or did not return distinct rewritten content.")
 
         # Rate-limiting pause
         time.sleep(self.config.delay_between_requests)
-        return paraphrased_result
+        return output_buffer
 
     def paraphrase_text(self, text: str, passes: Optional[int] = None) -> str:
         """Paraphrase/humanize text across multiple passes if specified.
