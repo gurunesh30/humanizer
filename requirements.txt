@@ -1,2 +1,4 @@
 python-docx>=0.8.11
 playwright>=1.40.0
+rich>=13.0.0
+questionary>=2.0.0

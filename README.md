@@ -44,8 +44,22 @@ python sample_generator.py
 This generates `sample_input.docx`.
 
 ### 2. Run the Paraphrasing Pipeline
+
+#### Option A: Guided Interactive Selection Mode (Recommended)
+Simply launch `main.py` without arguments to enter the interactive selection flow:
 ```bash
-python main.py --input sample_input.docx --output paraphrased_output.docx
+python main.py
+```
+This launches a guided CLI wizard that:
+- Auto-discovers `.docx` files in your directory for 1-click arrow selection
+- Suggests smart output filenames (`*_humanized.docx`)
+- Lets you select humanization depth / number of passes (1 to 5 passes)
+- Provides customizable advanced settings (delay, retries, headless, URL)
+- Displays configuration summary tables, live rich progress, and final metrics
+
+#### Option B: Direct Command Line Options
+```bash
+python main.py -i input.docx -o output.docx --passes 2
 ```
 
 ### 3. Command Line Options
@@ -54,6 +68,7 @@ options:
   -h, --help            show this help message and exit
   -i, --input INPUT     Path to the input Microsoft Word document (.docx)
   -o, --output OUTPUT   Path where the paraphrased Microsoft Word document (.docx) will be saved
+  --passes PASSES       Number of sequential humanization passes per paragraph (default: 1)
   --delay DELAY         Delay in seconds between consecutive paragraph submissions (default: 4.0)
   --retries RETRIES     Number of retry attempts per paragraph on failure (default: 3)
   --headless            Run browser in headless mode (default: False, recommended for CAPTCHAs)
