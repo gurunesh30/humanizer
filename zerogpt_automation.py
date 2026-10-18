@@ -110,41 +110,42 @@ class ZeroGPTAutomation:
             raise RuntimeError(f"Unable to locate {description} with any configured selector: {selectors}")
 
     def _clean_extracted_text(self, text: str) -> str:
-        """Strip boilerplate UI buttons, word counts, and labels from humanizer output."""
+        """Strip boilerplate UI buttons, word counts, and labels from humanizer output.
+
+        Only strips lines that are exact short UI label matches (e.g. 'Clear', 'Copy',
+        '65 Words'). Actual humanized content is never touched.
+        """
         if not text:
             return ""
+        import re
         lines = [line.strip() for line in text.split("\n") if line.strip()]
-        ignored_keywords = [
-            "your humanized text will appear here",
-            "words",
-            "clear",
-            "copy",
-            "switch to the advanced model",
-            "ai probability",
-            "confidence",
-            "humanized",
-            "classification",
+
+        # Exact-match UI labels (case-insensitive) that appear as standalone lines
+        exact_labels = {
+            "clear", "copy", "humanized", "classification",
+        }
+        # Patterns for short UI label lines (e.g. "65 Words", "AI Probability: 85%")
+        label_patterns = [
+            re.compile(r'^\d+\s*words?$', re.IGNORECASE),
+            re.compile(r'^switch to the advanced model', re.IGNORECASE),
+            re.compile(r'^your humanized text will appear here', re.IGNORECASE),
+            re.compile(r'^ai probability', re.IGNORECASE),
+            re.compile(r'^confidence', re.IGNORECASE),
         ]
+
         filtered = []
         for line in lines:
-            lower = line.lower()
-            if any(kw in lower for kw in ignored_keywords):
+            lower = line.lower().strip()
+            # Skip single-word exact UI labels
+            if lower in exact_labels:
+                continue
+            # Skip lines matching UI label patterns
+            if any(pat.match(lower) for pat in label_patterns):
                 continue
             filtered.append(line)
         return "\n\n".join(filtered).strip()
 
-    def paraphrase_text(self, text: str) -> str:
-        """Submit text to ZeroGPT paraphraser/humanizer, trigger rewrite, and extract output.
 
-        Args:
-            text: Paragraph text to paraphrase/humanize.
-
-        Returns:
-            Rephrased text output string.
-
-        Raises:
-            RuntimeError: If interaction or extraction fails.
-        """
     def _single_humanize_pass(self, text: str) -> str:
         """Perform a single humanization pass on text without unnecessary page scrolling."""
         if not self.page:
@@ -174,9 +175,13 @@ class ZeroGPTAutomation:
 
         # Step 1: Buffer input - clear browser clipboard so old text can never be mistakenly copied
         try:
-            self.page.evaluate("navigator.clipboard.writeText('')")
+            self.page.evaluate("() => navigator.clipboard.writeText('')")
+            time.sleep(0.2)
         except Exception:
             pass
+
+        # Keep a Python-side copy of the original input for comparison
+        original_input = text
 
         # Step 2: Clear input field cleanly
         input_el = humanizer_box.locator("textarea.source-textarea, textarea").first
@@ -231,29 +236,52 @@ class ZeroGPTAutomation:
                     copy_btn = humanizer_box.locator(".result-actions :text('Copy'), .result-panel :text('Copy')").first
                     if copy_btn.count() > 0 and copy_btn.is_visible():
                         try:
+                            # Clear clipboard right before clicking Copy
+                            self.page.evaluate("() => navigator.clipboard.writeText('')")
+                            time.sleep(0.15)
                             copy_btn.click(no_wait_after=True)
-                            time.sleep(0.4)
-                            clip_text = self.page.evaluate("navigator.clipboard.readText()")
-                            if clip_text and clip_text.strip() and clip_text.strip() != text:
-                                cleaned_clip = self._clean_extracted_text(clip_text.strip())
-                                if cleaned_clip and len(cleaned_clip) > 15:
-                                    logger.info("Output buffer captured via ZeroGPT Copy button.")
-                                    output_buffer = cleaned_clip
+                            time.sleep(0.6)
+                            clip_text = self.page.evaluate("() => navigator.clipboard.readText()")
+                            logger.debug(
+                                "Clipboard after Copy click: len=%d, preview=%s",
+                                len(clip_text) if clip_text else 0,
+                                repr(clip_text[:80]) if clip_text else "(empty)",
+                            )
+                            if clip_text and clip_text.strip():
+                                clip_stripped = clip_text.strip()
+                                # Accept as long as the clipboard is non-empty;
+                                # the humanizer usually changes something, but even
+                                # minor edits are valid output
+                                if clip_stripped != original_input:
+                                    logger.info("Output buffer captured via Copy button (len=%d).", len(clip_stripped))
+                                    output_buffer = clip_stripped
                                     break
+                                else:
+                                    logger.debug("Clipboard text matches original input; trying panel extraction.")
                         except Exception as e:
                             logger.debug("Clipboard copy read failed: %s", e)
 
                     # Strategy B: Direct panel extraction into buffer
                     cleaned_panel = self._clean_extracted_text(panel_text)
-                    if cleaned_panel and len(cleaned_panel) > 20 and cleaned_panel != text:
-                        logger.info("Output buffer captured from result panel.")
+                    logger.debug(
+                        "Panel extraction: raw_len=%d, cleaned_len=%d, preview=%s",
+                        len(panel_text),
+                        len(cleaned_panel) if cleaned_panel else 0,
+                        repr(cleaned_panel[:80]) if cleaned_panel else "(empty)",
+                    )
+                    if cleaned_panel and len(cleaned_panel) > 20 and cleaned_panel != original_input:
+                        logger.info("Output buffer captured from result panel (len=%d).", len(cleaned_panel))
                         output_buffer = cleaned_panel
                         break
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Polling iteration error: %s", exc)
             time.sleep(1.0)
 
         if not output_buffer:
+            logger.error(
+                "Humanizer timed out after %.1fs. No distinct rewritten content found.",
+                time.time() - start_wait,
+            )
             raise RuntimeError("Humanizer timed out or did not return distinct rewritten content.")
 
         # Rate-limiting pause
