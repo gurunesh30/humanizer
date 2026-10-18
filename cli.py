@@ -196,7 +196,7 @@ def run_interactive_wizard() -> dict:
     console.print(Rule("[bold bright_cyan]Step 3[/]  Humanization Strength", style="bright_cyan"))
     console.print()
 
-    passes = questionary.select(
+    passes_choice = questionary.select(
         "How many humanization passes per paragraph?",
         choices=[
             questionary.Choice(title="1 pass  — Quick, light rewrite", value=1),
@@ -204,15 +204,30 @@ def run_interactive_wizard() -> dict:
             questionary.Choice(title="3 passes — Heavy rewrite, maximum change", value=3),
             questionary.Choice(title="4 passes — Ultra-deep (slower)", value=4),
             questionary.Choice(title="5 passes — Maximum (very slow)", value=5),
+            questionary.Choice(title="✏️  Custom number of passes...", value=-1),
         ],
-        default="2 passes — Recommended, deeper humanization",
+        default=2,
         style=CUSTOM_STYLE,
         qmark="›",
         instruction="(more passes = more human-like, but slower)",
     ).ask()
 
-    if passes is None:
+    if passes_choice is None:
         _abort()
+
+    if passes_choice == -1:
+        passes_str = questionary.text(
+            "Enter number of passes (e.g. 2):",
+            default="2",
+            style=CUSTOM_STYLE,
+            qmark="›",
+            validate=lambda v: True if _is_positive_int(v) else "Must be a positive integer (e.g. 1, 2, 3)",
+        ).ask()
+        if passes_str is None:
+            _abort()
+        passes = int(passes_str)
+    else:
+        passes = passes_choice
 
     console.print(f"  [green]✓[/] Passes: [bold]{passes}[/]\n")
 
@@ -248,7 +263,7 @@ def run_interactive_wizard() -> dict:
                 questionary.Choice(title="🛡️  10 seconds — Very safe (for unstable connections)", value=10.0),
                 questionary.Choice(title="✏️  Custom value...", value=-1.0),
             ],
-            default="🔄 4 seconds  — Balanced (recommended)",
+            default=4.0,
             style=CUSTOM_STYLE,
             qmark="›",
         ).ask()
@@ -279,7 +294,7 @@ def run_interactive_wizard() -> dict:
                 questionary.Choice(title="5 retries — Persistent", value=5),
                 questionary.Choice(title="10 retries — Very persistent", value=10),
             ],
-            default="3 retries — Recommended",
+            default=3,
             style=CUSTOM_STYLE,
             qmark="›",
         ).ask()
@@ -484,7 +499,17 @@ def _is_positive_float(value: str) -> bool:
         return False
 
 
+def _is_positive_int(value: str) -> bool:
+    """Check if a string represents a positive integer."""
+    try:
+        val = int(value.strip())
+        return val > 0
+    except (ValueError, AttributeError):
+        return False
+
+
 def _abort() -> None:
     """Handle user cancellation gracefully."""
     console.print("\n  [dim red]✗ Pipeline cancelled by user.[/]\n")
     sys.exit(0)
+
