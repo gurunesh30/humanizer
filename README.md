@@ -6,7 +6,7 @@ An automated, resilient Python pipeline that reads Microsoft Word documents (`.d
 
 ## Features
 
-- **Document Ingestion & Incremental Save:** Reads `.docx` files, automatically filters out empty lines/whitespace, and writes each paraphrased paragraph immediately to disk. If the process is halted or interrupted, all previously processed paragraphs are preserved.
+- **Document Ingestion & Incremental Save:** Reads `.docx`, automatically filters out empty lines/whitespace, and writes each paraphrased paragraph immediately to disk. If the process is halted or interrupted, all previously processed paragraphs are preserved.
 - **Robust Multi-Selector Fallback Engine:** Features configurable primary and fallback selectors for input textareas, rewrite action buttons, and output containers to withstand UI updates.
 - **Human-in-the-Loop Anti-Bot & CAPTCHA Pause:** Automatically detects Cloudflare verification challenges or Turnstile popups, notifies the user via CLI to solve the challenge in the open browser window, and resumes on `ENTER`.
 - **Rate-Limit Mitigation & Retries:** Implements configurable delay spacing (default `4.0s`, configurable `3-5s`) between requests and an exponential backoff retry loop.
